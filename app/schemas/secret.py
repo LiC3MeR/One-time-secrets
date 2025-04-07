@@ -1,32 +1,29 @@
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
-from datetime import datetime
 
+class SecretBase(BaseModel):
+    pass
 
-class SecretCreate(BaseModel):
-    secret: str
-    passphrase: Optional[str] = None
-    ttl_seconds: Optional[int] = None
-
+class SecretCreate(SecretBase):
+    secret: str = Field(..., description="Секретные данные для хранения")
+    passphrase: Optional[str] = Field(None, description="Пароль для доступа к секрету")
+    ttl_seconds: Optional[int] = Field(None, description="Время жизни секрета в секундах")
 
 class SecretResponse(BaseModel):
-    secret_key: str
+    secret_key: str = Field(..., description="Ключ для доступа к секрету")
 
-
-class SecretContent(BaseModel):
-    secret: str
-
-
-class SecretStatus(BaseModel):
-    status: str
-
+class SecretShow(BaseModel):
+    secret: str = Field(..., description="Расшифрованные секретные данные")
 
 class SecretLog(BaseModel):
-    id: int
+    id: str
     secret_id: str
     action: str
-    ip_address: Optional[str]
     timestamp: datetime
-    
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    additional_info: Optional[str] = None
+
     class Config:
         orm_mode = True

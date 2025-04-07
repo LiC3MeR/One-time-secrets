@@ -1,66 +1,62 @@
 import base64
 import os
+import hashlib
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
+from typing import Tuple
 
 from app.core.config import settings
 
-
-def derive_key(passphrase: str = None) -> bytes:
-    if passphrase:
-        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-        digest.update(passphrase.encode())
-        return digest.finalize()
-    else:
-        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-        digest.update(settings.SECRET_KEY.encode())
-        return digest.finalize()
-
-
-def encrypt_secret(secret: str, passphrase: str = None) -> tuple:
-    key = derive_key(passphrase)
+# Функция для шифрования данных
+def encrypt_data(data: str) -> Tuple[str, str]:
+    # Генерируем случайный вектор инициализации
     iv = os.urandom(16)
     
+    # Создаем ключ шифрования из секретного ключа приложения
+    # Используем SHA-256 для получения ключа нужной длины (32 байта)
+    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    
+    # Создаем шифр
     cipher = Cipher(
         algorithms.AES(key),
         modes.CBC(iv),
         backend=default_backend()
     )
     
+    # Шифруем данные
     encryptor = cipher.encryptor()
+    # Дополняем данные до размера, кратного 16 байтам (блок AES)
+    padded_data = data.encode() + b'\0' * (16 - len(data.encode()) % 16)
+    encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
     
-    padded_secret = secret.encode()
-    padding_length = 16 - (len(padded_secret) % 16)
-    padded_secret += bytes([padding_length]) * padding_length
+    # Кодируем в base64 для хранения в базе данных
+    encrypted_data_b64 = base64.b64encode(encrypted_data).decode()
+    iv_b64 = base64.b64encode(iv).decode()
     
-    encrypted_data = encryptor.update(padded_secret) + encryptor.finalize()
-    
-    return (
-        base64.b64encode(encrypted_data).decode(),
-        base64.b64encode(iv).decode()
-    )
+    return encrypted_data_b64, iv_b64
 
-
-def decrypt_secret(encrypted_data: str, iv: str, passphrase: str = None) -> str:
-    key = derive_key(passphrase)
+# Функция для дешифрования данных
+def decrypt_data(encrypted_data_b64: str, iv_b64: str) -> str:
+    # Декодируем из base64
+    encrypted_data = base64.b64decode(encrypted_data_b64)
+    iv = base64.b64decode(iv_b64)
     
+    # Создаем ключ шифрования из секретного ключа приложения
+    # Используем SHA-256 для получения ключа нужной длины (32 байта)
+    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    
+    # Создаем шифр
     cipher = Cipher(
         algorithms.AES(key),
-        modes.CBC(base64.b64decode(iv)),
+        modes.CBC(iv),
         backend=default_backend()
     )
     
+    # Дешифруем данные
     decryptor = cipher.decryptor()
-    decrypted_data = decryptor.update(base64.b64decode(encrypted_data)) + decryptor.finalize()
+    decrypted_data = decryptor.update(encrypted_data) + decryptor.finalize()
     
-    padding_length = decrypted_data[-1]
-    unpadded_data = decrypted_data[:-padding_length]
+    # Удаляем дополнение
+    decrypted_data = decrypted_data.rstrip(b'\0')
     
-    return unpadded_data.decode()
-
-
-def hash_passphrase(passphrase: str) -> str:
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-    digest.update(passphrase.encode())
-    return base64.b64encode(digest.finalize()).decode()
+    return decrypted_data.decode()
